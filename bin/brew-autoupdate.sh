@@ -36,14 +36,24 @@ NPM_BEFORE=$(/opt/homebrew/bin/npm ls -g --depth=0 2>/dev/null)
     echo "--- brew cleanup -s"
     "$BREW" cleanup -s
 
-    echo "--- npm update -g（用 brew 的 npm，prefix 才是 /opt/homebrew）"
-    BUSY=$(pgrep -f "/opt/homebrew/lib/node_modules/@openai/codex/bin|/opt/homebrew/lib/node_modules/@anthropic-ai/claude-code/bin" 2>/dev/null | head -1 | tr -cd '0-9')
-    if [ -n "$BUSY" ]; then
-      echo "SKIP: codex/claude is running (pid $BUSY), skip npm update this run"
-      NPM_SKIPPED=1
-    else
-      "$PY" "$BOUNDED" /opt/homebrew/bin/npm update -g
+    echo "--- npm update -g（逐包排除正在运行的 codex/claude）"
+    NPM=/opt/homebrew/bin/npm
+    PKGS=$("$NPM" ls -g --depth=0 --json 2>/dev/null | "$PY" -c 'import json,sys;d=json.load(sys.stdin);print(" ".join(sorted(d.get("dependencies",{}))))')
+    BUSY=""
+    # npm / corepack 归 brew 的 node 管，不由 npm 自更新
+    PKGS=$(echo "$PKGS" | sed 's|npm||; s|corepack||')
+    if pgrep -f "/opt/homebrew/lib/node_modules/@openai/codex/bin" >/dev/null 2>&1; then
+      PKGS=$(echo "$PKGS" | sed 's|@openai/codex||'); BUSY="$BUSY codex"
+    fi
+    if pgrep -f "/opt/homebrew/lib/node_modules/@anthropic-ai/claude-code/bin" >/dev/null 2>&1; then
+      PKGS=$(echo "$PKGS" | sed 's|@anthropic-ai/claude-code||'); BUSY="$BUSY claude"
+    fi
+    [ -n "$BUSY" ] && echo "SKIP-busy:$BUSY （运行中，本次不动它，其余照常）"
+    if [ -n "$(echo "$PKGS" | tr -d ' ')" ]; then
+      "$PY" "$BOUNDED" "$NPM" update -g $PKGS
       echo "npm rc=$?"
+    else
+      echo "SKIP-none: 没有可更新的包"
     fi
   fi
 
@@ -75,9 +85,10 @@ if [ -n "$BEFORE" ] && [ "$BEFORE" != "$AFTER" ]; then
 ✅ Homebrew：$UPGRADED"
 fi
 
-if grep -q "^SKIP: codex/claude" "$LOG" 2>/dev/null; then
+if grep -q "^SKIP-busy:" "$LOG" 2>/dev/null; then
+  BUSYLIST=$(grep "^SKIP-busy:" "$LOG" | sed 's/^SKIP-busy://' | sed 's/（.*//' | tr -d '\n')
   OUT="$OUT
-⏭ npm 全局包：codex/claude 正在运行，本次跳过（下次再更）"
+⏭ 运行中、本次跳过：${BUSYLIST# }（其余包照常更新）"
 fi
 if [ -n "$NPM_AFTER" ] && [ "$NPM_BEFORE" != "$NPM_AFTER" ]; then
   CHANGED=$(printf '%s\n' "$NPM_AFTER" | grep -vxF "$NPM_BEFORE" | grep -E '──' | tr -d '├└─ ' | tr '\n' ' ')
