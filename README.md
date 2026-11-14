@@ -1,68 +1,98 @@
 # mac-auto-update
 
-macOS 上的**自动更新小工具**：每天定时升级 Homebrew 的 CLI 工具，顺带更新 Claude Code 和 Codex，带日志和滚动清理。
+每天自动更新这台 Mac 的工具链，并在凌晨重启后台服务让新版本生效。带日志、3 天滚动、只在有事时通知。
 
-只做这一件事——把命令行工具保持最新。**不碰图形应用、不碰网络工具、不碰 Hermes 本体。**
+## 两个任务
 
-## 它管什么
+| 脚本 | 时间 | 做什么 |
+|---|---|---|
+| `bin/brew-autoupdate.sh` | 每天 03:30 | Homebrew CLI、npm 全局包、pip、指定 GUI 应用 |
+| `bin/restart-services.sh` | 每天 05:00 | 重启当前在跑的 brew services（postgres / redis…） |
 
-- `brew update && brew upgrade --formula`：136 个 CLI 工具（ffmpeg、yt-dlp、node、postgres 等）
-- `brew cleanup -s`：清下载缓存（这台机器磁盘小，能腾几个 G）
-- `/opt/homebrew/bin/npm update -g`：全局 npm 包（claude-code、codex、happy-coder…），15 分钟超时。**必须用 `/opt/homebrew/bin/npm`**，PATH 里别的 npm 会把包装错 prefix
-- **GUI 白名单**（当前：`openscreen`）：升级前先 `pkill -x <进程名>` 退出应用，再 `brew upgrade --cask`。要加新应用就改脚本顶部 `CASKS="cask名:进程名"`
+分成两步的原因：`brew upgrade` 只替换文件、**不会重启服务**，所以服务需要在没人用的时候单独重启（凌晨 5 点）。
 
-## 它不管什么（故意的）
+## 更新范围
 
-| 对象 | 原因 |
-|---|---|
-| **Chrome / 飞书 Lark / Telegram** | Homebrew 把它们标成 `auto_updates`，它们自己更新，brew 接管会双重更新 |
-| **Clash Party 等网络工具** | 网络关键路径，更新出问题会断网，改手动 |
-| **Hermes Agent** | git 安装，用自己的 `hermes update` |
-| **npm 全局包** | 已恢复正规通道：`brew install node` 后用 `/opt/homebrew/bin/npm update -g` 统一更新 |
-| **大体积 GUI**（IntelliJ、VideoFusion…） | 动辄 3–4G，升级要退出应用，按需手动 |
+| 类别 | 具体 | 策略 |
+|---|---|---|
+| Homebrew formula | 所有 CLI 工具 | 全升 |
+| npm 全局包 | claude-code、codex、happy-coder… | 全升；**正在运行的那个单独跳过** |
+| pip | 全局 Python 包 | **只升同一大版本**（补丁/次版本）；跨大版本只报告 |
+| GUI cask | 脚本顶部白名单 | 见下 |
+| brew services | postgres、redis… | 每天 05:00 重启（不会顺手启动没在跑的服务） |
+
+## GUI 白名单
+
+脚本顶部三组配置，改这三行就能加应用：
+
+```bash
+# 可杀可升：运行中也一样，先杀掉再升级
+CASKS_KILLABLE="openscreen|Openscreen baidunetdisk|BaiduNetdisk_mac ..."
+
+# 在跑就跳过：有状态、可能在执行长任务
+CASKS_SKIP_IF_RUNNING="wechat|WeChat deepseek-harness|DeepSeek Harness"
+
+# 升完重新打开
+REOPEN="QQ"
+```
+
+三条原则：
+
+1. **有状态 / 可能正在跑任务的应用，在跑就绝不更新**（微信、DeepSeek Harness）——中途替换文件会让正在进行的会话版本混用
+2. **可随时关闭的应用，杀掉再升，不重开**（会议、网盘、剪辑、IDE）
+3. **网络工具永不动**（Clash / 代理 / VPN）——升坏了整机断网
+
+## 为什么 pip 只升同大版本
+
+`pip list --outdated` 里经常出现 `anthropic 0.97 → 2.8`、`openai 2.15 → 3.51` 这种跨大版本跳级。这些包 API 会变，盲升会把现有脚本跑挂。所以脚本只升主版本号不变的，跨版本的列出来等人工确认：
+
+```bash
+bin/pip_safe_update.py --dry-run
+```
 
 ## 日志
 
-- 位置：`~/Library/Logs/brew-autoupdate/`（macOS 用户级日志目录，Console.app 能直接打开）
-- 每次运行一个文件，**保留 3 天**，自动删除更早的
-- 记录 `brew update` / 升级了哪些包 / 失败时的 error 行
+- `~/Library/Logs/brew-autoupdate/`：每次运行一个文件，**保留 3 天**
+- `~/Library/Logs/mac-auto-update/`：服务重启日志，同样 3 天
+- 升级失败先看里面的 `error|failed|fatal|TIMEOUT` 行
 
-> 为什么不用 `/var/log`：那是系统级目录，需要 root；用户级定时任务的标准位置就是 `~/Library/Logs`。
+> 不用 `/var/log`：那是系统级目录、需要 root；用户级定时任务的标准位置就是 `~/Library/Logs`（Console.app 能直接打开）。
 
-## 装法
+## 安装
 
-### 方式 A：Hermes cron（本机在用）
+### Hermes cron（本机在用）
+
+`~/.hermes/scripts/` 里各放一个转发的启动器：
 
 ```bash
-# ~/.hermes/scripts/brew-autoupdate.sh 里放一个转发的启动器
+#!/bin/sh
 exec /bin/bash /path/to/mac-auto-update/bin/brew-autoupdate.sh "$@"
 ```
 
-然后每天 3:30 跑一次。stdout 只在「有升级」或「有失败」时输出 → 没动静就不打扰。
+然后 `30 3 * * *` 和 `0 5 * * *` 各建一个 `no_agent` 任务。stdout 只在「有升级」或「有失败」时输出 → 没动静就不打扰。
 
-### 方式 B：launchd
-
-```xml
-<key>StartCalendarInterval</key>
-<dict><key>Weekday</key><integer>0</integer><key>Hour</key><integer>3</integer><key>Minute</key><integer>30</integer></dict>
-```
+### launchd
 
 ```bash
-launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.mint.brew-autoupdate.plist
+launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/<job>.plist
 ```
+
+> 在 Hermes gateway 里 `launchctl bootstrap` 会被安全策略拒绝（防网关重启循环），要在独立终端里执行。
 
 ## 升级正在运行的程序会怎样
 
-- **CLI 工具**：文件被替换，正在跑的进程继续用内存里的旧版，不崩；重启后生效
-- **codex / claude 正在跑时**：脚本会 **跳过 npm 那次更新**（`pgrep` 检测进程），等下次没在跑时再更——npm 自己不会跳过，硬更可能让运行中的会话版本混用
-- **brew services（postgres / redis）**：`brew upgrade` 只换文件，**不会重启服务**；要 `brew services restart` 才用新版
-- **GUI 应用**：brew 不检测是否在运行，也不跳过——所以本工具**只升 formula，不升 cask**
+- **CLI 工具**：文件被替换，运行中的进程继续用内存里的旧版，不崩；重启后生效
+- **npm / pip 包**：同上；但**正在跑的那个包**会被脚本单独跳过，避免运行中版本混用
+- **brew services**：升级不重启服务，由 05:00 的任务负责重启
+- **GUI 应用**：brew 不检测是否在运行、也不跳过——所以必须在白名单里显式处理
 
 ## 手动试跑
 
 ```bash
-bin/brew-autoupdate.sh            # 真升级
-bin/brew-autoupdate.sh --dry-run  # 只看有哪些待更新
+bin/brew-autoupdate.sh --dry-run   # 只看有哪些待更新
+bin/brew-autoupdate.sh             # 真升级
+bin/restart-services.sh            # 立即重启服务
+bin/pip_safe_update.py --dry-run   # pip 分类报告
 ```
 
 ## License
