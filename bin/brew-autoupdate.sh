@@ -37,8 +37,14 @@ NPM_BEFORE=$(/opt/homebrew/bin/npm ls -g --depth=0 2>/dev/null)
     "$BREW" cleanup -s
 
     echo "--- npm update -g（用 brew 的 npm，prefix 才是 /opt/homebrew）"
-    "$PY" "$BOUNDED" /opt/homebrew/bin/npm update -g
-    echo "npm rc=$?"
+    BUSY=$(pgrep -f "/opt/homebrew/lib/node_modules/@openai/codex/bin|/opt/homebrew/lib/node_modules/@anthropic-ai/claude-code/bin" 2>/dev/null | head -1 | tr -cd '0-9')
+    if [ -n "$BUSY" ]; then
+      echo "SKIP: codex/claude is running (pid $BUSY), skip npm update this run"
+      NPM_SKIPPED=1
+    else
+      "$PY" "$BOUNDED" /opt/homebrew/bin/npm update -g
+      echo "npm rc=$?"
+    fi
   fi
 
   echo "--- outdated after:"
@@ -69,6 +75,10 @@ if [ -n "$BEFORE" ] && [ "$BEFORE" != "$AFTER" ]; then
 ✅ Homebrew：$UPGRADED"
 fi
 
+if grep -q "^SKIP: codex/claude" "$LOG" 2>/dev/null; then
+  OUT="$OUT
+⏭ npm 全局包：codex/claude 正在运行，本次跳过（下次再更）"
+fi
 if [ -n "$NPM_AFTER" ] && [ "$NPM_BEFORE" != "$NPM_AFTER" ]; then
   CHANGED=$(printf '%s\n' "$NPM_AFTER" | grep -vxF "$NPM_BEFORE" | grep -E '──' | tr -d '├└─ ' | tr '\n' ' ')
   OUT="$OUT

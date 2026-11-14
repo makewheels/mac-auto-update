@@ -53,6 +53,7 @@ launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.mint.brew-autoupdate
 ## 升级正在运行的程序会怎样
 
 - **CLI 工具**：文件被替换，正在跑的进程继续用内存里的旧版，不崩；重启后生效
+- **codex / claude 正在跑时**：脚本会 **跳过 npm 那次更新**（`pgrep` 检测进程），等下次没在跑时再更——npm 自己不会跳过，硬更可能让运行中的会话版本混用
 - **brew services（postgres / redis）**：`brew upgrade` 只换文件，**不会重启服务**；要 `brew services restart` 才用新版
 - **GUI 应用**：brew 不检测是否在运行，也不跳过——所以本工具**只升 formula，不升 cask**
 
