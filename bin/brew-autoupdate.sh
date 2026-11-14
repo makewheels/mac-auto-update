@@ -19,8 +19,7 @@ DRY=0
 [ "${1:-}" = "--dry-run" ] && DRY=1
 
 BEFORE=$("$BREW" outdated --formula 2>/dev/null)
-CLAUDE_BEFORE=$(claude --version 2>/dev/null | head -1)
-CODEX_BEFORE=$(codex --version 2>/dev/null | head -1)
+NPM_BEFORE=$(/opt/homebrew/bin/npm ls -g --depth=0 2>/dev/null)
 
 {
   echo "=== start $(date '+%F %T')"
@@ -37,12 +36,9 @@ CODEX_BEFORE=$(codex --version 2>/dev/null | head -1)
     echo "--- brew cleanup -s"
     "$BREW" cleanup -s
 
-    echo "--- claude update"
-    "$PY" "$BOUNDED" claude update
-    echo "claude rc=$?"
-    echo "--- codex update"
-    "$PY" "$BOUNDED" codex update
-    echo "codex rc=$?"
+    echo "--- npm update -g（用 brew 的 npm，prefix 才是 /opt/homebrew）"
+    "$PY" "$BOUNDED" /opt/homebrew/bin/npm update -g
+    echo "npm rc=$?"
   fi
 
   echo "--- outdated after:"
@@ -52,8 +48,7 @@ CODEX_BEFORE=$(codex --version 2>/dev/null | head -1)
 RC=$?
 
 AFTER=$("$BREW" outdated --formula 2>/dev/null)
-CLAUDE_AFTER=$(claude --version 2>/dev/null | head -1)
-CODEX_AFTER=$(codex --version 2>/dev/null | head -1)
+NPM_AFTER=$(/opt/homebrew/bin/npm ls -g --depth=0 2>/dev/null)
 
 # 只保留最近 3 天
 find "$LOG_DIR" -name '*.log' -type f -mtime +3 -delete 2>/dev/null
@@ -74,13 +69,10 @@ if [ -n "$BEFORE" ] && [ "$BEFORE" != "$AFTER" ]; then
 ✅ Homebrew：$UPGRADED"
 fi
 
-if [ -n "$CLAUDE_AFTER" ] && [ "$CLAUDE_BEFORE" != "$CLAUDE_AFTER" ]; then
+if [ -n "$NPM_AFTER" ] && [ "$NPM_BEFORE" != "$NPM_AFTER" ]; then
+  CHANGED=$(printf '%s\n' "$NPM_AFTER" | grep -vxF "$NPM_BEFORE" | grep -E '──' | tr -d '├└─ ' | tr '\n' ' ')
   OUT="$OUT
-✅ Claude Code：${CLAUDE_BEFORE:-未知} → $CLAUDE_AFTER"
-fi
-if [ -n "$CODEX_AFTER" ] && [ "$CODEX_BEFORE" != "$CODEX_AFTER" ]; then
-  OUT="$OUT
-✅ Codex：${CODEX_BEFORE:-未知} → $CODEX_AFTER"
+✅ npm 全局包：$CHANGED"
 fi
 
 if [ -n "$OUT" ]; then

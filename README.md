@@ -8,7 +8,7 @@ macOS 上的**自动更新小工具**：每天定时升级 Homebrew 的 CLI 工�
 
 - `brew update && brew upgrade --formula`：136 个 CLI 工具（ffmpeg、yt-dlp、node、postgres 等）
 - `brew cleanup -s`：清下载缓存（这台机器磁盘小，能腾几个 G）
-- `claude update` / `codex update`：两个 CLI 用它们**自己的**更新命令（各自 15 分钟超时，不会卡住任务）
+- `/opt/homebrew/bin/npm update -g`：全局 npm 包（claude-code、codex、happy-coder、corepack…），15 分钟超时。**必须用 `/opt/homebrew/bin/npm`**，PATH 里别的 npm 会把包装错 prefix
 
 ## 它不管什么（故意的）
 
@@ -17,7 +17,7 @@ macOS 上的**自动更新小工具**：每天定时升级 Homebrew 的 CLI 工�
 | **Chrome / 飞书 Lark / Telegram** | Homebrew 把它们标成 `auto_updates`，它们自己更新，brew 接管会双重更新 |
 | **Clash Party 等网络工具** | 网络关键路径，更新出问题会断网，改手动 |
 | **Hermes Agent** | git 安装，用自己的 `hermes update` |
-| **npm 全局包** | 这台机器 Homebrew 的 node/npm 已卸载，只剩 `/opt/homebrew/lib/node_modules` 里的残包；claude/codex 改用它们自己的 `update` 命令 |
+| **npm 全局包** | 已恢复正规通道：`brew install node` 后用 `/opt/homebrew/bin/npm update -g` 统一更新 |
 | **大体积 GUI**（IntelliJ、VideoFusion…） | 动辄 3–4G，升级要退出应用，按需手动 |
 
 ## 日志
