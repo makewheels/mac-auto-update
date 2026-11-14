@@ -8,7 +8,8 @@ macOS 上的**自动更新小工具**：每天定时升级 Homebrew 的 CLI 工�
 
 - `brew update && brew upgrade --formula`：136 个 CLI 工具（ffmpeg、yt-dlp、node、postgres 等）
 - `brew cleanup -s`：清下载缓存（这台机器磁盘小，能腾几个 G）
-- `/opt/homebrew/bin/npm update -g`：全局 npm 包（claude-code、codex、happy-coder、corepack…），15 分钟超时。**必须用 `/opt/homebrew/bin/npm`**，PATH 里别的 npm 会把包装错 prefix
+- `/opt/homebrew/bin/npm update -g`：全局 npm 包（claude-code、codex、happy-coder…），15 分钟超时。**必须用 `/opt/homebrew/bin/npm`**，PATH 里别的 npm 会把包装错 prefix
+- **GUI 白名单**（当前：`openscreen`）：升级前先 `pkill -x <进程名>` 退出应用，再 `brew upgrade --cask`。要加新应用就改脚本顶部 `CASKS="cask名:进程名"`
 
 ## 它不管什么（故意的）
 
