@@ -122,25 +122,9 @@ if [ $DRY -eq 1 ]; then
 fi
 
 OUT=""
-if [ $RC -ne 0 ]; then
-  OUT="⚠️ 每日自动更新有失败（rc=$RC）：$(grep -iE 'error|failed|fatal|TIMEOUT' "$LOG" | tail -3 | tr '\n' ' ')"
-fi
-
-if [ -n "$BEFORE" ] && [ "$BEFORE" != "$AFTER" ]; then
-  UPGRADED=$(printf '%s\n' "$BEFORE" | grep -vxF "$AFTER" | tr '\n' ' ')
-  OUT="$OUT
-✅ Homebrew：$UPGRADED"
-fi
-
-if [ -n "$CASK_DONE" ]; then
-  OUT="$OUT
-✅ GUI 应用：$CASK_DONE"
-fi
-
-if [ -n "$NPM_AFTER" ] && [ "$NPM_BEFORE" != "$NPM_AFTER" ]; then
-  CHANGED=$(printf '%s\n' "$NPM_AFTER" | grep -vxF "$NPM_BEFORE" | grep -E '──' | tr -d '├└─ ' | tr '\n' ' ')
-  OUT="$OUT
-✅ npm 全局包：$CHANGED"
+ERRS=$(grep -iE "^Error:|^fatal:|TIMEOUT|Download failed" "$LOG" 2>/dev/null | tail -3 | tr '\n' ' ')
+if [ $RC -ne 0 ] || [ -n "$ERRS" ]; then
+  OUT="⚠️ 自动更新有失败：${ERRS:-rc=$RC}"
 fi
 
 if [ -n "$PIP_SUMMARY" ]; then
@@ -148,19 +132,14 @@ if [ -n "$PIP_SUMMARY" ]; then
 $PIP_SUMMARY"
 fi
 
-if grep -q "^SKIP-busy:" "$LOG" 2>/dev/null; then
-  BUSYLIST=$(grep "^SKIP-busy:" "$LOG" | sed 's/^SKIP-busy://' | sed 's/（.*//' | tr -d '\n')
+FAILED_CASKS=$(grep -E "^cask .* rc=[1-9]" "$LOG" 2>/dev/null | sed -E 's/^cask ([^ ]+) rc=.*/\1/' | tr '\n' ' ')
+if [ -n "$FAILED_CASKS" ]; then
   OUT="$OUT
-⏭ 运行中、本次跳过：${BUSYLIST# }"
-fi
-if grep -q "^SKIP-cask:" "$LOG" 2>/dev/null; then
-  CASKLIST=$(grep "^SKIP-cask:" "$LOG" | sed 's/^SKIP-cask://' | sed 's/（.*//' | tr -d '\n')
-  OUT="$OUT
-⏭ GUI 在运行、跳过：${CASKLIST# }"
+⚠️ GUI 升级失败：$FAILED_CASKS"
 fi
 
 if [ -n "$OUT" ]; then
   echo "${OUT#?}"
   echo "日志：$LOG"
 fi
-# 没有升级、没有报错 → 完全静默，cron 不打扰
+# 成功（有升级也算成功）时完全静默，只有失败才推送
