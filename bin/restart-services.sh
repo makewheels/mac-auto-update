@@ -1,33 +1,38 @@
 #!/bin/bash
-# 每天 05:00 重启 Homebrew 服务，让升级后的二进制生效。
-# 只重启「当前是 started」的服务；没在跑的不动（不会顺手启动）。
-# 日志：~/Library/Logs/mac-auto-update/services.log  保留 3 天
-# 输出：只有重启过或失败时才打印
+# 每天 05:00 重启「当前正在运行」的 Homebrew 服务，让升级后的二进制生效。
+# 没在跑的服务一律不动（不会顺手启动）。
+# 成功：完全静默；失败才输出。
+# 日志：~/Library/Logs/mac-auto-update/  保留 3 天
 
 LOG_DIR="$HOME/Library/Logs/mac-auto-update"
 mkdir -p "$LOG_DIR"
 LOG="$LOG_DIR/$(date +%Y%m%d).log"
 BREW=/opt/homebrew/bin/brew
 
-SERVICES=$(/bin/ls "$HOME/Library/LaunchAgents" 2>/dev/null | sed -n 's/^homebrew\.mxcl\.\(.*\)\.plist$/\1/p' | sort -u)
+# 只取 brew services 里状态为 started 的；不信 LaunchAgents 文件名
+SERVICES=$("$BREW" services list 2>/dev/null | awk 'NR>1 && $2=="started" {print $1}')
 
-[ -z "$SERVICES" ] && { echo "没有正在运行的 brew 服务"; exit 0; }
+[ -z "$SERVICES" ] && exit 0
 
+FAILED=""
 {
   echo "=== restart $(date '+%F %T')"
   for s in $SERVICES; do
     echo "--- $s"
-    "$BREW" services restart "$s" 2>&1
+    if "$BREW" services restart "$s" >>"$LOG" 2>&1; then
+      echo "  ok"
+    else
+      echo "  FAILED"
+      FAILED="$FAILED $s"
+    fi
   done
   echo "=== done $(date '+%F %T')"
 } >>"$LOG" 2>&1
-RC=$?
 
 find "$LOG_DIR" -name '*.log' -type f -mtime +3 -delete 2>/dev/null
 
-if [ $RC -ne 0 ]; then
-  echo "⚠️ 服务重启有失败（rc=$RC）：$(grep -iE 'error|failed' "$LOG" | tail -3 | tr '\n' ' ')"
+if [ -n "$FAILED" ]; then
+  echo "⚠️ 服务重启失败：$FAILED"
   echo "日志：$LOG"
-else
-  echo "✅ 已重启服务：$(echo $SERVICES | tr '\n' ' ')"
 fi
+# 成功时什么都不输出 → cron 不推送

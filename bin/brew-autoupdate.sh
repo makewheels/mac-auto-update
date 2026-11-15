@@ -72,7 +72,7 @@ NPM_BEFORE=$("$NPM" ls -g --depth=0 2>/dev/null)
     echo "--- pip 安全更新（只升同大版本）"
     PIP_OUT=$("$PY" "$BOUNDED" "$GLOBAL_PY" "$DIR/pip_safe_update.py")
     echo "$PIP_OUT"
-    PIP_SUMMARY=$(echo "$PIP_OUT" | grep -E "^(✅|⚠️|⏸)" | head -3)
+    PIP_SUMMARY=$(echo "$PIP_OUT" | grep -E "^⚠️" | head -3)  # 只在失败时提示；升级明细只进日志
 
     echo "--- GUI 应用（白名单）"
     CASK_DONE=""
