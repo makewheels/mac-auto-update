@@ -1,7 +1,8 @@
 #!/bin/bash
 # 每天自动更新这台 Mac 的工具链：
 #   1) Homebrew CLI 工具（brew upgrade --formula）+ 清缓存
-#   2) npm 全局包（claude-code / codex / happy-coder…），运行中的单独跳过
+#   2) npm 全局包（claude-code / codex / happy-coder… 以及 npm 自身），运行中的单独跳过
+#      corepack 不升（跟 brew 的 node 走）；npm 12+ 需 --allow-remote=all 才能拉自己的包
 #   3) pip 包（只升同大版本；跨大版本只报告，等人工确认）
 #   4) GUI 应用（白名单，升级前先退出；微信 / DeepSeek Harness 在跑就跳过）
 #
@@ -19,6 +20,9 @@ PY=/usr/bin/python3
 GLOBAL_PY=/usr/local/bin/python3
 DIR="$(cd "$(dirname "$0")" && pwd)"
 BOUNDED="$DIR/run_bounded.py"
+
+# 固定用 brew 的 node/node-gyp：用户 shell 里 nvm 的 node 可能更旧（npm 12 不认 node <24.15）
+export PATH="/opt/homebrew/bin:$PATH"
 
 # GUI 策略：cask|App 名
 # 可杀可升（运行中也一样，升级前先杀掉）
@@ -50,11 +54,23 @@ NPM_BEFORE=$("$NPM" ls -g --depth=0 2>/dev/null)
     echo "--- brew cleanup -s"
     "$BREW" cleanup -s
 
-    echo "--- npm update -g（逐包排除正在运行的 codex/claude）"
+    echo "--- npm update -g（含 npm 自身，逐包排除正在运行的 codex/claude）"
     PKGS=$("$NPM" ls -g --depth=0 --json 2>/dev/null | "$PY" -c 'import json,sys;d=json.load(sys.stdin);print(" ".join(sorted(d.get("dependencies",{}))))')
     BUSY=""
-    # npm / corepack 归 brew 的 node 管，不由 npm 自更新
+    # corepack 归 brew 的 node 管，不由 npm 自更新
     PKGS=$(echo "$PKGS" | sed 's|npm||; s|corepack||')
+    # npm 12 起远程 tarball 默认禁止，自更新要显式放行；旧版 npm 不认这个参数
+    ALLOW_REMOTE=""
+    NPM_MAJOR=$("$NPM" -v 2>/dev/null | cut -d. -f1)
+    if [ "${NPM_MAJOR:-0}" -ge 12 ] 2>/dev/null; then
+      ALLOW_REMOTE="--allow-remote=all"
+    fi
+    # npm 自身真有新版才升（否则 update -g npm 每次都会把 npm 重装一遍）
+    NPM_LATEST=$("$NPM" view npm version 2>/dev/null)
+    if [ -n "$NPM_LATEST" ] && [ "$NPM_LATEST" != "$("$NPM" -v 2>/dev/null)" ]; then
+      echo "npm 自身 $("$NPM" -v) -> $NPM_LATEST，一并升级"
+      PKGS="$PKGS npm"
+    fi
     if pgrep -f "/opt/homebrew/lib/node_modules/@openai/codex/bin" >/dev/null 2>&1; then
       PKGS=$(echo "$PKGS" | sed 's|@openai/codex||'); BUSY="$BUSY codex"
     fi
@@ -63,7 +79,7 @@ NPM_BEFORE=$("$NPM" ls -g --depth=0 2>/dev/null)
     fi
     [ -n "$BUSY" ] && echo "SKIP-busy:$BUSY （运行中，本次不动它，其余照常）"
     if [ -n "$(echo "$PKGS" | tr -d ' ')" ]; then
-      "$PY" "$BOUNDED" "$NPM" update -g $PKGS
+      "$PY" "$BOUNDED" "$NPM" update -g $ALLOW_REMOTE $PKGS
       echo "npm rc=$?"
     else
       echo "SKIP-none: 没有可更新的包"

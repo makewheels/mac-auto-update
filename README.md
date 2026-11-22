@@ -16,10 +16,12 @@
 | 类别 | 具体 | 策略 |
 |---|---|---|
 | Homebrew formula | 所有 CLI 工具 | 全升 |
-| npm 全局包 | claude-code、codex、happy-coder… | 全升；**正在运行的那个单独跳过** |
+| npm 全局包 | claude-code、codex、happy-coder… 以及 **npm 自身** | 全升；**正在运行的那个单独跳过**；corepack 不升（跟 brew 的 node 走） |
 | pip | 全局 Python 包 | **只升同一大版本**（补丁/次版本）；跨大版本只报告 |
 | GUI cask | 脚本顶部白名单 | 见下 |
 | brew services | postgres、redis… | 每天 05:00 重启（不会顺手启动没在跑的服务） |
+
+> npm 自身也在升级范围内：只有 registry 上真有新版才升（否则 `update -g npm` 每次都会把 npm 重装一遍）。npm 12 起默认禁止拉远程包，脚本按主版本自动补 `--allow-remote=all`；`brew upgrade node` 会把 npm 换回 node 自带版本，第二天凌晨脚本再把它升回最新。脚本内部 PATH 前置了 `/opt/homebrew/bin`，避免用到 nvm 里更旧的 node。
 
 ## GUI 白名单
 
